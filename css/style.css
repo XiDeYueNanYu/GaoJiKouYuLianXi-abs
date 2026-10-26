@@ -333,3 +333,24 @@ details.fold > .fold-body { padding: 0 16px 14px; }
 .empty { padding: 26px; text-align: center; color: var(--ink-soft); border: 1px dashed var(--line); border-radius: var(--radius); list-style: none; }
 .error-box { padding: 16px 18px; border-left: 4px solid var(--live); background: var(--live-soft); border-radius: 4px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ================= AI phân tích ================= */
+.spk-rec:empty { display: none; }
+.ai-box { display: grid; gap: 10px; }
+.ai-box:empty { display: none; }
+.ai-box audio { height: 36px; max-width: 100%; }
+.ai-res { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--accent-soft); }
+.ai-res .fold { background: var(--sheet); }
+.ai-res .rich { font-size: 16px; line-height: 1.9; }
+.ai-score b { margin-right: 2px; }
+.ai-errors { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
+.err-o { text-decoration: line-through; text-decoration-color: var(--live); color: var(--ink-soft); }
+.err-f { color: var(--ok); font-weight: 500; }
+.ai-hint { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 1px 8px; border-radius: 999px; }
+.ai-note { padding: 10px 12px; border-radius: 6px; background: var(--accent-soft); margin-bottom: 12px; font-size: 14px; }
+.rec-toggle { margin-left: 4px; }
+.rec-dot { display: inline-flex; align-items: center; gap: 6px; color: var(--live); font-weight: 600; }
+.rec-dot::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--live); animation: recpulse 1.2s ease-in-out infinite; }
+@keyframes recpulse { 50% { opacity: .25; } }
+.tp-rec { color: #F2F5F8; }
+.tp.recording .tp-time::after { content: "  ● Đang ghi âm"; font-size: 13px; color: #EE7E77; font-weight: 600; }

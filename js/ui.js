@@ -48,7 +48,7 @@ const UI = (() => {
    * Khung một lượt nói: chuẩn bị (đếm ngược) → nói (đếm ngược, hoặc đếm xuôi nếu speakSec = 0) → xong.
    * Bản ghi lời nói gõ được ngay khi đang nói (dùng đọc chính tả của bàn phím) hoặc sau khi nói.
    */
-  function speak({ title = '', prepSec = 0, speakSec = 60, notes = true, value = {}, onDone, onPhase } = {}) {
+  function speak({ title = '', prepSec = 0, speakSec = 60, notes = true, value = {}, onDone, onPhase, ai = null } = {}) {
     const el = U.el(`<section class="spk" data-phase="ready">
       ${title ? `<h3 class="spk-title">${title}</h3>` : ''}
       <div class="spk-clock">
@@ -60,11 +60,23 @@ const UI = (() => {
       ${notes ? `<label class="spk-notes">Ý chính (ghi nhanh khi chuẩn bị)<textarea class="field zh" rows="2" placeholder="Từ khoá, khung trả lời…"></textarea></label>` : ''}
       <label class="spk-tr" hidden>Lời bạn đã nói<textarea class="field zh" rows="5" placeholder="Bật đọc chính tả tiếng Trung trên bàn phím điện thoại rồi nói, hoặc gõ lại sau khi nói xong."></textarea></label>
       <div class="spk-stats small"></div>
+      <div class="spk-rec"></div>
     </section>`);
     const notesTa = $('.spk-notes textarea', el), trWrap = $('.spk-tr', el), trTa = $('.spk-tr textarea', el);
     if (notesTa) notesTa.value = value.notes || '';
     trTa.value = value.transcript || '';
-    let phase = value.transcript ? 'done' : 'ready', endsAt = 0, startedSpeak = 0, spoken = U.num(value.speakSec, 0), timer = null;
+    let phase = (value.transcript || value.ai) ? 'done' : 'ready', endsAt = 0, startedSpeak = 0, spoken = U.num(value.speakSec, 0), timer = null;
+
+    // Ghi âm cho AI (chỉ khi phần luyện có cấu hình ai và tài khoản được dùng AI)
+    const canRec = !!ai && AI.available();
+    let recOn = canRec && Store.prefs.record !== false, rec = null;
+    const micFail = err => { recOn = false; rec = null; toast('Không dùng được micro: ' + (err && err.name === 'NotAllowedError' ? 'bạn chưa cho phép trình duyệt dùng micro.' : (err && err.message) || err), 'bad'); drawActions(); };
+    const aiBox = canRec || (ai && value.ai) ? AI.box({
+      scope: ai && ai.scope, context: ai && ai.context, getSec: () => spoken, value: value.ai || null,
+      onResult: a => { if (!trTa.value.trim() && a.transcript) { trTa.value = a.transcript; drawStats(); } onDone && onDone(result()); },
+      useTranscript: t => { trTa.value = t; drawStats(); onDone && onDone(result()); }
+    }) : null;
+    if (aiBox) $('.spk-rec', el).appendChild(aiBox.el);
 
     const setPhase = p => {
       phase = p; el.dataset.phase = p;
@@ -74,7 +86,7 @@ const UI = (() => {
     };
     const total = () => phase === 'prep' ? prepSec : speakSec;
     function tick() {
-      if (!el.isConnected && timer) { clearInterval(timer); timer = null; return; }
+      if (!el.isConnected && timer) { clearInterval(timer); timer = null; if (rec) rec.release(); return; }
       const label = { ready: 'Sẵn sàng', prep: 'Chuẩn bị', speak: 'Đang nói', done: 'Đã xong' }[phase];
       $('.spk-phase', el).textContent = label;
       let shown = 0, frac = 0;
@@ -89,11 +101,18 @@ const UI = (() => {
       $('.spk-bar i', el).style.width = (frac * 100) + '%';
     }
     function run() { if (!timer) timer = setInterval(tick, 200); }
-    function startPrep() { endsAt = Date.now() + prepSec * 1000; setPhase('prep'); run(); notesTa && notesTa.focus(); }
-    function startSpeak() { startedSpeak = Date.now(); endsAt = startedSpeak + speakSec * 1000; setPhase('speak'); run(); }
+    function startPrep() {
+      if (recOn) { rec = Rec.create(); rec.prepare().catch(micFail); } // xin quyền micro từ lúc chuẩn bị
+      endsAt = Date.now() + prepSec * 1000; setPhase('prep'); run(); notesTa && notesTa.focus();
+    }
+    function startSpeak() {
+      if (recOn) { rec = rec || Rec.create(); rec.start().catch(micFail); }
+      startedSpeak = Date.now(); endsAt = startedSpeak + speakSec * 1000; setPhase('speak'); run();
+    }
     function finish() {
       if (phase === 'speak') spoken = Math.round((Date.now() - startedSpeak) / 1000);
       clearInterval(timer); timer = null;
+      if (rec) { const r0 = rec; rec = null; r0.stop().then(r => { if (r && aiBox) aiBox.setRec(r); }); }
       setPhase('done'); drawStats();
       onDone && onDone(result());
     }
@@ -104,9 +123,17 @@ const UI = (() => {
       if (phase === 'ready') {
         if (prepSec) { btn(`Bắt đầu chuẩn bị (${prepSec}s)`, startPrep, true); btn('Nói luôn', startSpeak); }
         else btn(speakSec ? `Bắt đầu nói (${speakSec}s)` : 'Bắt đầu nói', startSpeak, true);
+        if (canRec) {
+          const t = U.el(`<label class="switch small rec-toggle"><input type="checkbox" ${recOn ? 'checked' : ''}><span>Ghi âm để AI phân tích</span></label>`);
+          t.querySelector('input').addEventListener('change', e => { recOn = e.target.checked; Store.setPref('record', recOn); });
+          a.appendChild(t);
+        }
       } else if (phase === 'prep') btn('Chuẩn bị xong, nói luôn', () => { beep(660); startSpeak(); }, true);
-      else if (phase === 'speak') btn('Nói xong', () => { beep(440, 200); finish(); }, true);
-      else if (phase === 'done') btn('Nói lại lượt này', () => { trTa.value = ''; spoken = 0; $('.spk-stats', el).innerHTML = ''; startSpeak(); });
+      else if (phase === 'speak') {
+        btn('Nói xong', () => { beep(440, 200); finish(); }, true);
+        if (recOn) a.appendChild(U.el('<span class="rec-dot small">Đang ghi âm</span>'));
+      }
+      else if (phase === 'done') btn('Nói lại lượt này', () => { trTa.value = ''; spoken = 0; $('.spk-stats', el).innerHTML = ''; aiBox && aiBox.clear(); startSpeak(); });
     }
     function drawStats() {
       const t = trTa.value;
@@ -118,7 +145,7 @@ const UI = (() => {
     }
     trTa.addEventListener('input', U.debounce(() => { if (phase === 'done') drawStats(); onDone && phase === 'done' && onDone(result()); }, 400));
     notesTa && notesTa.addEventListener('input', U.debounce(() => onDone && phase === 'done' && onDone(result()), 400));
-    const result = () => ({ notes: notesTa ? notesTa.value.trim() : '', transcript: trTa.value.trim(), speakSec: spoken, chars: U.count(trTa.value).han, rate: U.rate(trTa.value, spoken) });
+    const result = () => ({ notes: notesTa ? notesTa.value.trim() : '', transcript: trTa.value.trim(), speakSec: spoken, chars: U.count(trTa.value).han, rate: U.rate(trTa.value, spoken), ai: aiBox ? aiBox.analysis : (value.ai || null) });
 
     setPhase(phase);
     if (phase === 'done') drawStats();
@@ -126,13 +153,15 @@ const UI = (() => {
   }
 
   /** Tự chấm: thang 1–5 cho từng tiêu chí + checklist + ghi chú. scope: quick | material | opinion | interp | media */
-  function assess(scope, { title = 'Tự chấm', intro = '' } = {}) {
+  function assess(scope, { title = 'Tự chấm', intro = '', ai = null } = {}) {
     const crit = Store.rubric(scope);
     const items = (Store.content.checklist || []).filter(c => String(c.scope || '').split(/[,，\s]+/).includes(scope));
+    const hasAi = ai && Object.keys(ai).length;
     const body = `${intro ? `<div class="muted" style="margin-bottom:10px">${intro}</div>` : ''}
+      ${hasAi ? `<div class="row ai-note"><span>AI đã chấm bài này. Điểm AI hiện cạnh từng tiêu chí để bạn đối chiếu.</span><button type="button" class="btn btn-sm" data-use-ai>Lấy điểm AI</button></div>` : ''}
       <div class="rubric-pick">${crit.map(c => `
         <div class="rp" data-id="${U.esc(c.id)}">
-          <div class="rp-head"><b class="zh">${U.esc(c.name_zh)}</b><span>${U.esc(c.name_vi)}</span></div>
+          <div class="rp-head"><b class="zh">${U.esc(c.name_zh)}</b><span>${U.esc(c.name_vi)}</span>${hasAi && ai[c.id] ? `<span class="ai-hint">AI: ${ai[c.id]}</span>` : ''}</div>
           <div class="rp-scale" role="radiogroup" aria-label="${U.esc(c.name_vi)}">
             ${[1, 2, 3, 4, 5].map(n => `<button type="button" class="rp-n" data-n="${n}" role="radio" aria-checked="false">${n}</button>`).join('')}
             <button type="button" class="rp-n rp-skip" data-n="" role="radio" aria-checked="true" title="Không chấm tiêu chí này">Bỏ qua</button>
@@ -145,7 +174,13 @@ const UI = (() => {
     const descFor = (c, n) => n <= 1 ? `1: ${c.desc_1}` : n === 2 ? `2: giữa mức 1 và 3. ${c.desc_3}` : n === 3 ? `3: ${c.desc_3}` : n === 4 ? `4: giữa mức 3 và 5. ${c.desc_5}` : `5: ${c.desc_5}`;
     return modal({
       title, body, wide: true,
-      onMount: root => root.querySelectorAll('.rp').forEach(rp => {
+      onMount: root => {
+        const ub = root.querySelector('[data-use-ai]');
+        ub && ub.addEventListener('click', () => root.querySelectorAll('.rp').forEach(rp => {
+          const v = ai[rp.dataset.id]; if (!v) return;
+          const b = rp.querySelector(`.rp-n[data-n="${Math.round(v)}"]`); b && b.click();
+        }));
+        root.querySelectorAll('.rp').forEach(rp => {
         const c = crit.find(x => x.id === rp.dataset.id);
         rp.addEventListener('click', e => {
           const b = e.target.closest('.rp-n'); if (!b) return;
@@ -153,7 +188,8 @@ const UI = (() => {
           rp.querySelector('.rp-desc').textContent = b.dataset.n ? descFor(c, Number(b.dataset.n)) : 'Không chấm tiêu chí này.';
         });
         rp.addEventListener('mouseover', e => { const b = e.target.closest('.rp-n[data-n]:not(.rp-skip)'); if (b) rp.querySelector('.rp-desc').textContent = descFor(c, Number(b.dataset.n)); });
-      }),
+        });
+      },
       actions: [
         { label: 'Quay lại', value: null },
         {
@@ -173,9 +209,11 @@ const UI = (() => {
   }
 
   /** Máy nhắc chữ toàn màn hình. Trả về Promise { sec } = số giây đã chạy. */
-  function teleprompter(text, { rate = 230 } = {}) {
+  function teleprompter(text, { rate = 230, record = false } = {}) {
     return new Promise(resolve => {
       const est = Math.max(10, U.duration(text, rate));
+      const canRec = record && AI.available();
+      let recOn = canRec && Store.prefs.record !== false, rec = null;
       const ov = U.el(`<div class="tp" role="dialog" aria-modal="true" aria-label="Máy nhắc chữ">
         <div class="tp-top row">
           <span class="tp-time">0:00</span><span class="muted small">/ ước tính ${U.fmtTime(est)}</span><span class="spacer"></span>
@@ -185,6 +223,7 @@ const UI = (() => {
           <button type="button" class="btn btn-sm" data-a="smaller" title="Chữ nhỏ hơn">A−</button>
           <button type="button" class="btn btn-sm" data-a="bigger" title="Chữ to hơn">A+</button>
           <button type="button" class="btn btn-sm" data-a="restart">Về đầu</button>
+          ${canRec ? `<label class="switch small tp-rec"><input type="checkbox" ${recOn ? 'checked' : ''}><span>Ghi âm để AI phân tích</span></label>` : ''}
           <button type="button" class="btn btn-sm btn-primary" data-a="close">Đóng</button>
         </div>
         <div class="tp-view"><div class="tp-text zh">${U.rich(text, { pinyin: false, marks: false })}</div></div>
@@ -207,17 +246,26 @@ const UI = (() => {
       };
       const toggle = on => {
         playing = on ?? !playing; last = 0;
+        if (playing && recOn && !rec) {
+          rec = Rec.create();
+          rec.start().then(() => ov.classList.add('recording')).catch(err => { rec = null; recOn = false; toast('Không dùng được micro: ' + (err.message || err), 'bad'); });
+        }
         $('.tp-play', ov).textContent = playing ? 'Tạm dừng' : (elapsed ? 'Tiếp tục' : 'Bắt đầu đọc');
         if (playing) raf = requestAnimationFrame(loop); else cancelAnimationFrame(raf);
       };
       const setSize = v => { size = Math.max(20, Math.min(64, v)); txt.style.fontSize = size + 'px'; Store.setPref('tpSize', size); };
-      const close = () => { toggle(false); ov.remove(); document.removeEventListener('keydown', onKey); resolve({ sec: Math.round(elapsed) }); };
+      const close = async () => {
+        toggle(false); ov.remove(); document.removeEventListener('keydown', onKey);
+        const r = rec ? await rec.stop() : null;
+        resolve({ sec: Math.round(elapsed), rec: r });
+      };
       const onKey = e => {
         if (e.key === 'Escape') close();
         if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); toggle(); }
         if (e.key === 'ArrowUp') { pos = Math.max(0, pos - 60); view.scrollTop = pos; }
         if (e.key === 'ArrowDown') { pos += 60; view.scrollTop = pos; }
       };
+      ov.addEventListener('change', e => { if (e.target.closest('.tp-rec')) { recOn = e.target.checked; Store.setPref('record', recOn); } });
       ov.addEventListener('click', e => {
         const a = e.target.closest('[data-a]'); if (!a) return;
         ({ play: () => toggle(), close, slower: () => { factor = Math.max(0.5, factor - 0.1); drawSpeed(); }, faster: () => { factor = Math.min(2, factor + 0.1); drawSpeed(); },
@@ -249,14 +297,16 @@ const UI = (() => {
   }
 
   /** Lưu một bài nói lên Sheet sau khi tự chấm. Trả về true nếu lưu được. */
-  async function saveSpeaking({ scope, type, refId, title, content, notes = '', speakSec = 0, data = {}, intro = '' }) {
-    const res = await assess(scope, { intro });
+  async function saveSpeaking({ scope, type, refId, title, content, notes = '', speakSec = 0, data = {}, intro = '', ai = [] }) {
+    const aiList = (ai || []).filter(Boolean);
+    const aiScores = AI.avgScores(aiList);
+    const res = await assess(scope, { intro, ai: aiScores });
     if (!res) return false;
     const c = U.count(content);
     try {
       await Api.call('submit', {
         type, refId, title, content, notes, data, charCount: c.han, speakSec, rate: U.rate(content, speakSec),
-        scores: res.scores, checklistDone: res.done, checklistTotal: res.total, checklistMissed: res.missed, note: res.note
+        scores: res.scores, aiScores, aiFeedback: aiList.length ? AI.compact(aiList) : '', checklistDone: res.done, checklistTotal: res.total, checklistMissed: res.missed, note: res.note
       });
       Store.setHistory(null);
       toast('Đã lưu lên Sheet.');

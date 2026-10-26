@@ -7,7 +7,7 @@ const Store = (() => {
   const s = {
     session: read('session', null),       // { token, user: {username, displayName}, expiresAt }
     content: read('content', null),       // { methods, phrases, identify, frames, topics, checklist, config, loadedAt }
-    prefs: Object.assign({ pinyin: false, beep: true, hideText: false }, read('prefs', {})),
+    prefs: Object.assign({ pinyin: false, beep: true, hideText: false, record: true }, read('prefs', {})),
     history: null                          // bộ nhớ tạm của trang Lịch sử
   };
 

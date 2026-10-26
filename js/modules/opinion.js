@@ -38,6 +38,7 @@ Modules.quandiem = {
       const s = UI.speak({
         title: i ? `<span class="task-no">Câu hỏi xoáy ${i}</span> <span class="zh">${U.esc(t.title)}</span>` : '<span class="task-no">Câu hỏi chính</span>',
         prepSec: t.prep, speakSec: t.speak, notes: !!t.prep, value: d.res[i] || {},
+        ai: { scope: 'opinion', context: () => ({ main: o.question, question: t.title }) },
         onDone: r => { d.res[i] = r; Store.saveDraft(key, d); if (!wrap.children[i + 1]) add(i + 1); }
       });
       wrap.appendChild(s.el);
@@ -55,7 +56,7 @@ Modules.quandiem = {
         const sec = res.reduce((s, r) => s + (r ? r.speakSec : 0), 0);
         const here = location.hash;
         const ok = await UI.saveSpeaking({ scope: 'opinion', type: 'opinion', refId: o.id, title: o.question, content, speakSec: sec,
-          notes: res.map(r => r && r.notes).filter(Boolean).join('\n'), data: { tasks: res.map(r => r && { sec: r.speakSec, rate: r.rate }) } });
+          notes: res.map(r => r && r.notes).filter(Boolean).join('\n'), ai: res.map(r => r && r.ai), data: { tasks: res.map(r => r && { sec: r.speakSec, rate: r.rate }) } });
         if (ok) { Store.clearDraft(key); Store.addMark('opinion', o.id); if (location.hash === here) location.hash = '#/quandiem'; }
       });
     };

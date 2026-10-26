@@ -65,6 +65,7 @@ Modules.tailieu = {
       const s = UI.speak({
         title: `<span class="task-no">${t.main ? 'Nhiệm vụ chính' : 'Câu hỏi ' + i}</span> <span class="zh">${U.esc(t.title)}</span>`,
         prepSec: t.prep, speakSec: t.speak, value: d.res[i] || {},
+        ai: { scope: 'material', context: () => ({ material: m.text, question: t.title, sample: t.sample }) },
         onPhase: p => hideText(p === 'prep' || p === 'speak'),
         onDone: r => {
           d.res[i] = r; persist();
@@ -90,7 +91,7 @@ Modules.tailieu = {
         const sec = res.reduce((s, r) => s + (r ? r.speakSec : 0), 0);
         const here = location.hash;
         const ok = await UI.saveSpeaking({ scope: 'material', type: 'material', refId: m.id, title: m.title, content, speakSec: sec,
-          notes: res.map(r => r && r.notes).filter(Boolean).join('\n'),
+          notes: res.map(r => r && r.notes).filter(Boolean).join('\n'), ai: res.map(r => r && r.ai),
           data: { tasks: res.map(r => r && { sec: r.speakSec, rate: r.rate }) } });
         if (ok) { Store.clearDraft(key); Store.addMark('material', m.id); if (location.hash === here) location.hash = '#/tailieu'; }
       });

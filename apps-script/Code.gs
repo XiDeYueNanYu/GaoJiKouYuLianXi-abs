@@ -25,10 +25,11 @@ var HEADERS = {
   Rubric: ['id', 'scope', 'name_zh', 'name_vi', 'desc_1', 'desc_3', 'desc_5', 'active'],
   Checklist: ['id', 'scope', 'group', 'text_vi', 'text_zh', 'active'],
   Config: ['key', 'value', 'note'],
-  Users: ['username', 'display_name', 'new_password', 'password_hash', 'salt', 'active', 'created_at', 'last_login', 'note'],
+  Users: ['username', 'display_name', 'new_password', 'password_hash', 'salt', 'active', 'ai_limit', 'created_at', 'last_login', 'note'],
   Sessions: ['token', 'username', 'created_at', 'expires_at'],
   Submissions: ['id', 'username', 'type', 'ref_id', 'title', 'content', 'notes', 'data', 'char_count', 'speak_sec', 'rate',
-    'scores', 'avg_score', 'checklist_done', 'checklist_total', 'checklist_missed', 'note', 'created_at'],
+    'scores', 'avg_score', 'ai_scores', 'ai_feedback', 'checklist_done', 'checklist_total', 'checklist_missed', 'note', 'created_at'],
+  AiPrompts: ['id', 'prompt', 'note', 'active'],
   Attempts: ['id', 'username', 'item_id', 'chosen', 'answer', 'correct', 'created_at']
 };
 var HASH_ROUNDS = 300;
@@ -71,14 +72,17 @@ var HANDLERS = {
   },
   me: function (req) { var u = auth_(req); return { user: publicUser_(u) }; },
   getContent: function (req) {
-    auth_(req);
+    var user = auth_(req);
     var content = {};
     CONTENT_TABS.forEach(function (name) {
       content[name.toLowerCase()] = readRows_(name).filter(isActive_);
     });
     content.config = config_();
+    content.ai = aiStatus_(user);
     return { content: content, loadedAt: new Date().toISOString() };
   },
+  aiStatus: function (req) { return { ai: aiStatus_(auth_(req)) }; },
+  analyzeAudio: analyzeAudio_,
   submit: submit_,
   logAttempt: logAttempt_,
   getHistory: getHistory_
@@ -207,6 +211,8 @@ function submit_(req) {
     rate: num_(req.rate),
     scores: keys.map(function (k) { return k + '=' + scores[k]; }).join('; '),
     avg_score: avg,
+    ai_scores: scoreText_(req.aiScores),
+    ai_feedback: (function () { var f = req.aiFeedback == null ? '' : (typeof req.aiFeedback === 'string' ? req.aiFeedback : JSON.stringify(req.aiFeedback)); return f.length > MAX_TEXT ? f.slice(0, MAX_TEXT) : f; })(),
     checklist_done: num_(req.checklistDone),
     checklist_total: num_(req.checklistTotal),
     checklist_missed: (req.checklistMissed || []).join('\n'),
@@ -237,11 +243,11 @@ function getHistory_(req) {
   var me = String(user.username).toLowerCase();
   var mine = function (r) { return String(r.username).toLowerCase() === me; };
   var subs = readRows_(TAB.SUBMISSIONS).filter(mine).map(function (r) {
-    var scores = {};
-    String(r.scores || '').split(';').forEach(function (p) { var kv = p.split('='); if (kv.length === 2 && kv[0].trim()) scores[kv[0].trim()] = Number(kv[1]); });
+    var scores = parseScores_(r.scores), aiScores = parseScores_(r.ai_scores);
     return {
       id: r.id, type: r.type, refId: r.ref_id, title: r.title, content: r.content, notes: r.notes, data: r.data,
       charCount: r.char_count, speakSec: r.speak_sec, rate: r.rate, scores: scores, avgScore: r.avg_score,
+      aiScores: aiScores, aiFeedback: r.ai_feedback,
       checklistDone: r.checklist_done, checklistTotal: r.checklist_total, checklistMissed: r.checklist_missed,
       note: r.note, createdAt: r.created_at
     };
@@ -329,6 +335,9 @@ function onOpen() {
     .addItem('Xoá phiên đăng nhập hết hạn', 'cleanupSessions')
     .addItem('Đăng xuất tất cả thiết bị', 'clearAllSessions')
     .addSeparator()
+    .addItem('Đặt Gemini API key', 'setGeminiKey')
+    .addItem('Kiểm tra kết nối AI', 'testGemini')
+    .addSeparator()
     .addItem('Tạo các tab còn thiếu', 'setupSheets')
     .addToUi();
 }
@@ -384,4 +393,219 @@ function setupSheets() {
     created.push(name);
   });
   SpreadsheetApp.getUi().alert(created.length ? 'Đã tạo: ' + created.join(', ') : 'Đã đủ các tab.');
+}
+
+/* ============================== AI phân tích giọng nói (Gemini) ============================== */
+/*
+ * API key lưu trong Script Properties (menu HSK 口语 → Đặt Gemini API key), không nằm trong mã.
+ * Prompt lấy từ tab AiPrompts (id: _chung, quick, material, opinion, interp, media); thiếu thì dùng mặc định bên dưới.
+ * Config: ai_enabled, ai_models (danh sách, thử lần lượt), ai_daily_limit (lượt/ngày/người), ai_max_sec.
+ * Users.ai_limit: giới hạn riêng từng người (để trống = theo Config, 0 = không dùng AI).
+ */
+var GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
+var AI_MIME = { 'audio/webm': 1, 'audio/ogg': 1, 'audio/mp4': 1, 'audio/m4a': 1, 'audio/aac': 1, 'audio/mpeg': 1, 'audio/mp3': 1, 'audio/wav': 1, 'audio/flac': 1, 'audio/opus': 1 };
+var MAX_AUDIO_B64 = 14 * 1024 * 1024; // giới hạn yêu cầu Gemini là 20 MB
+
+var DEFAULT_PROMPTS = {
+  _chung: [
+    'Bạn là giám khảo khẩu ngữ tiếng Trung trình độ HSK 7–9 (tham khảo cách chấm IELTS Speaking) và là giáo viên dạy tiếng Trung cho người Việt. Bạn nhận một file ghi âm người học nói tiếng Trung.',
+    'Quy tắc bắt buộc:',
+    '1. transcript: chép bằng chữ Hán giản thể đúng những gì nghe được, kể cả câu sai ngữ pháp, từ lặp, từ đệm (然后、那个…). Không sửa, không thêm ý. Chỗ không nghe rõ ghi [?].',
+    '2. Nếu bản ghi im lặng, quá ngắn hoặc không phải tiếng Trung: transcript để trống, mọi điểm bằng 0, summary giải thích ngắn.',
+    '3. Chấm mỗi tiêu chí từ 1 đến 5 theo thang bên dưới (được dùng 2 và 4). Phát âm (pro) chấm dựa trên âm thanh thực tế, không dựa trên văn bản.',
+    '4. pronunciation: tối đa 8 chỗ sai thanh điệu hoặc sai âm: chữ Hán, pinyin đúng, âm nghe được.',
+    '5. errors: tối đa 8 lỗi từ vựng, ngữ pháp hoặc diễn đạt: câu gốc (trích từ transcript), câu sửa, lý do ngắn.',
+    '6. improved: viết lại bài nói ở mức 5/5, giữ ý và ví dụ của người học, độ dài phù hợp với {{sec}} giây nói.',
+    '7. summary, comments, why, extra viết bằng tiếng Việt, ngắn gọn, cụ thể; câu tiếng Trung giữ nguyên chữ Hán.',
+    'Thang chấm:',
+    '{{rubric}}'
+  ].join('\n'),
+  quick: 'Phần luyện: Phản xạ nhanh (kiểu IELTS Part 1), trả lời khoảng 30 giây.\nCâu hỏi: {{question}}\nTrong extra: câu đầu có trả lời thẳng câu hỏi không; có lý do hoặc ví dụ cụ thể không.',
+  material: 'Phần luyện: HSK 7–9, nói dựa trên tài liệu.\nTài liệu:\n{{material}}\nNhiệm vụ hoặc câu hỏi: {{question}}\nCâu trả lời tham khảo (chỉ để đối chiếu, không bắt buộc giống): {{sample}}\nTrong extra: người học có thuật lại đủ ý chính và đúng thông tin của tài liệu không; liệt kê ý bị sót hoặc sai.',
+  opinion: 'Phần luyện: HSK 7–9 phần nêu quan điểm, kết hợp câu hỏi xoáy kiểu IELTS Part 3.\nCâu hỏi chính của đề: {{main}}\nCâu hỏi đang trả lời: {{question}}\nTrong extra: lập trường có rõ không; có lý do, ví dụ, nhượng bộ không; nếu là câu hỏi xoáy thì có trả lời đúng trọng tâm không.',
+  interp: 'Phần luyện: dịch nói Việt → Trung.\nĐoạn tiếng Việt:\n{{source_vi}}\nBản dịch tham khảo (một cách dịch, không phải duy nhất): {{reference}}\nThuật ngữ cần có: {{terms}}\nTrong extra: liệt kê ý bị dịch sót hoặc sai nghĩa và thuật ngữ dịch sai. improved: bản dịch nói tự nhiên dựa trên ý người học.',
+  media: 'Phần luyện: đọc kịch bản video ngắn cho 抖音 / 小红书 (loại: {{type}}), thời lượng mục tiêu {{target_sec}} giây.\nKịch bản người học định đọc:\n{{script}}\nTrong extra: so lời đọc với kịch bản (chỗ vấp, đọc sai, bỏ câu); nhận xét tốc độ, nhấn nhá và năng lượng giọng khi nói trước ống kính. Chấm cả các tiêu chí riêng cho video. improved: chỉnh kịch bản cho dễ nói hơn, giữ nguyên ý.'
+};
+
+function geminiKey_() { return PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || ''; }
+function today_() { return Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Bangkok', 'yyyyMMdd'); }
+function usageKey_(u) { return 'aiuse_' + today_() + '_' + String(u).toLowerCase(); }
+
+function aiStatus_(user) {
+  var cfg = config_();
+  var on = !cfg.hasOwnProperty('ai_enabled') || isActive_({ active: cfg.ai_enabled });
+  var keySet = !!geminiKey_();
+  var limit = (user.ai_limit !== undefined && user.ai_limit !== '' && user.ai_limit !== null) ? Number(user.ai_limit) : Number(cfg.ai_daily_limit || 30);
+  if (!isFinite(limit)) limit = 30;
+  var used = Number(PropertiesService.getScriptProperties().getProperty(usageKey_(user.username)) || 0);
+  return { enabled: on && keySet && limit > 0, keySet: keySet, switchedOn: on, limit: limit, used: used, maxSec: Number(cfg.ai_max_sec || 300) };
+}
+
+function scoreText_(obj) {
+  if (!obj || typeof obj !== 'object') return '';
+  return Object.keys(obj).filter(function (k) { return obj[k] !== '' && obj[k] != null && isFinite(Number(obj[k])); })
+    .map(function (k) { return k + '=' + obj[k]; }).join('; ');
+}
+function parseScores_(text) {
+  var out = {};
+  String(text || '').split(';').forEach(function (p) { var kv = p.split('='); if (kv.length === 2 && kv[0].trim()) out[kv[0].trim()] = Number(kv[1]); });
+  return out;
+}
+
+/** Đổi lượt dùng: +1 trước khi gọi, -1 nếu gọi thất bại. Trả về số đã dùng sau khi đổi. */
+function bumpUsage_(username, delta) {
+  return withLock_(function () {
+    var props = PropertiesService.getScriptProperties();
+    var key = usageKey_(username);
+    var n = Math.max(0, Number(props.getProperty(key) || 0) + delta);
+    props.setProperty(key, String(n));
+    if (Math.random() < 0.1) { // dọn bộ đếm của các ngày cũ
+      var prefix = 'aiuse_' + today_();
+      props.getKeys().forEach(function (k) { if (k.indexOf('aiuse_') === 0 && k.indexOf(prefix) !== 0) props.deleteProperty(k); });
+    }
+    return n;
+  });
+}
+
+function analyzeAudio_(req) {
+  var user = auth_(req);
+  var st = aiStatus_(user);
+  if (!st.keySet) throw apiError_('AI_OFF', 'Chưa đặt Gemini API key. Người quản trị mở Sheet và chạy menu HSK 口语 → Đặt Gemini API key.');
+  if (!st.switchedOn) throw apiError_('AI_OFF', 'Tính năng AI đang tắt (Config → ai_enabled).');
+  if (st.limit <= 0) throw apiError_('AI_OFF', 'Tài khoản này chưa được dùng AI phân tích.');
+  var scope = String(req.scope || '');
+  if (SUBMISSION_TYPES.indexOf(scope) < 0) throw apiError_('BAD_REQUEST', 'Phần luyện không hợp lệ: ' + scope);
+  var audio = String(req.audio || '');
+  if (audio.length < 1000) throw apiError_('BAD_REQUEST', 'Bản ghi âm trống hoặc quá ngắn.');
+  if (audio.length > MAX_AUDIO_B64) throw apiError_('TOO_LONG', 'Bản ghi âm quá dài để gửi một lần. Hãy nói ngắn hơn ' + st.maxSec + ' giây.');
+  var mime = String(req.mime || '').split(';')[0].trim().toLowerCase();
+  if (mime === 'audio/x-m4a' || mime === 'audio/mp4') mime = 'audio/m4a'; // Safari ghi ra audio/mp4 (AAC trong vỏ m4a)
+  if (!AI_MIME[mime]) throw apiError_('BAD_REQUEST', 'Định dạng âm thanh không hỗ trợ: ' + mime);
+  if (st.used >= st.limit) throw apiError_('AI_LIMIT', 'Bạn đã dùng hết ' + st.limit + ' lượt phân tích hôm nay. Lượt mới được tính từ 0 giờ.');
+
+  var used = bumpUsage_(user.username, 1);
+  try {
+    var p = buildPrompt_(scope, req.context || {}, Number(req.sec) || 0);
+    var r = callGemini_(p.system, p.user, aiSchema_(p.criteria), { mime: mime, data: audio });
+    return { analysis: normalizeAnalysis_(r.data, p.criteria), model: r.model, used: used, limit: st.limit };
+  } catch (err) {
+    bumpUsage_(user.username, -1);
+    throw err;
+  }
+}
+
+function aiPrompts_() {
+  var out = {};
+  Object.keys(DEFAULT_PROMPTS).forEach(function (k) { out[k] = DEFAULT_PROMPTS[k]; });
+  try {
+    readRows_('AiPrompts').filter(isActive_).forEach(function (r) { if (r.id && String(r.prompt).trim()) out[String(r.id).trim()] = String(r.prompt); });
+  } catch (e) { /* chưa có tab AiPrompts: dùng mặc định */ }
+  return out;
+}
+
+function buildPrompt_(scope, ctx, sec) {
+  var criteria = readRows_('Rubric').filter(isActive_).filter(function (c) { return c.scope === 'core' || c.scope === scope; });
+  var rubric = criteria.map(function (c) {
+    return '- ' + c.id + ' ' + c.name_zh + ' (' + c.name_vi + '): 1 = ' + c.desc_1 + ' | 3 = ' + c.desc_3 + ' | 5 = ' + c.desc_5;
+  }).join('\n');
+  var vars = { rubric: rubric, sec: String(Math.round(sec)) };
+  Object.keys(ctx).forEach(function (k) { vars[k] = String(ctx[k] == null ? '' : ctx[k]).slice(0, 6000); });
+  var fill = function (t) { return String(t).replace(/\{\{(\w+)\}\}/g, function (m, k) { return vars.hasOwnProperty(k) ? vars[k] : '(không có)'; }); };
+  var prompts = aiPrompts_();
+  return {
+    system: fill(prompts._chung),
+    user: fill(prompts[scope] || '') + '\nThời gian đã nói: ' + Math.round(sec) + ' giây. Hãy phân tích file ghi âm đính kèm.',
+    criteria: criteria.map(function (c) { return String(c.id); })
+  };
+}
+
+function aiSchema_(criteria) {
+  var scoreProps = {}, commentProps = {};
+  criteria.forEach(function (id) { scoreProps[id] = { type: 'INTEGER' }; commentProps[id] = { type: 'STRING' }; });
+  return {
+    type: 'OBJECT',
+    properties: {
+      transcript: { type: 'STRING' },
+      summary: { type: 'STRING' },
+      scores: { type: 'OBJECT', properties: scoreProps, required: criteria },
+      comments: { type: 'OBJECT', properties: commentProps, required: criteria },
+      pronunciation: { type: 'ARRAY', items: { type: 'OBJECT', properties: { text: { type: 'STRING' }, expected: { type: 'STRING' }, heard: { type: 'STRING' } }, required: ['text', 'expected', 'heard'] } },
+      errors: { type: 'ARRAY', items: { type: 'OBJECT', properties: { original: { type: 'STRING' }, fix: { type: 'STRING' }, why: { type: 'STRING' } }, required: ['original', 'fix', 'why'] } },
+      extra: { type: 'STRING' },
+      improved: { type: 'STRING' }
+    },
+    required: ['transcript', 'summary', 'scores', 'comments', 'pronunciation', 'errors', 'extra', 'improved']
+  };
+}
+
+function normalizeAnalysis_(a, criteria) {
+  a = a || {};
+  var scores = {};
+  criteria.forEach(function (id) { var n = Math.round(Number((a.scores || {})[id])); scores[id] = isFinite(n) ? Math.max(0, Math.min(5, n)) : 0; });
+  var arr = function (x) { return Array.isArray(x) ? x.slice(0, 12) : []; };
+  return {
+    transcript: String(a.transcript || ''), summary: String(a.summary || ''), scores: scores,
+    comments: a.comments || {}, pronunciation: arr(a.pronunciation), errors: arr(a.errors),
+    extra: String(a.extra || ''), improved: String(a.improved || '')
+  };
+}
+
+/** Gọi Gemini, thử lần lượt các model trong Config → ai_models. audio = { mime, data } hoặc null. */
+function callGemini_(system, userText, schema, audio) {
+  var key = geminiKey_();
+  if (!key) throw apiError_('AI_OFF', 'Chưa đặt Gemini API key.');
+  var models = String(config_().ai_models || 'gemini-flash-latest').split(/[,\s]+/).filter(String);
+  var parts = [{ text: userText }];
+  if (audio) parts.push({ inlineData: { mimeType: audio.mime, data: audio.data } });
+  var body = { contents: [{ role: 'user', parts: parts }], generationConfig: { temperature: 0.3 } };
+  if (system) body.systemInstruction = { parts: [{ text: system }] };
+  if (schema) { body.generationConfig.responseMimeType = 'application/json'; body.generationConfig.responseSchema = schema; }
+  var notes = [];
+  for (var i = 0; i < models.length; i++) {
+    var m = models[i];
+    var res = UrlFetchApp.fetch(GEMINI_URL + encodeURIComponent(m) + ':generateContent', {
+      method: 'post', contentType: 'application/json', payload: JSON.stringify(body),
+      headers: { 'x-goog-api-key': key }, muteHttpExceptions: true
+    });
+    var code = res.getResponseCode(), json = {};
+    try { json = JSON.parse(res.getContentText()); } catch (e) { /* bỏ qua */ }
+    var msg = json.error ? String(json.error.message || json.error.status || '') : '';
+    if (code === 200) {
+      var cand = (json.candidates || [])[0];
+      var text = cand && cand.content && cand.content.parts ? cand.content.parts.map(function (p) { return p.text || ''; }).join('') : '';
+      if (!text) { notes.push(m + ': không có nội dung trả về (' + (cand ? cand.finishReason : 'không có kết quả') + ')'); continue; }
+      if (!schema) return { model: m, data: text };
+      text = text.replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+      try { return { model: m, data: JSON.parse(text) }; }
+      catch (e) { notes.push(m + ': kết quả không phải JSON hợp lệ'); continue; }
+    }
+    if (code === 429) throw apiError_('AI_QUOTA', 'Gemini báo đã hết hạn mức (429). Thử lại sau ít phút, hoặc kiểm tra hạn mức của API key trong Google AI Studio.');
+    if (code === 401 || code === 403) throw apiError_('AI_KEY', 'Gemini từ chối API key (' + code + '): ' + msg + ' Hãy tạo key mới và đặt lại qua menu.');
+    notes.push(m + ': ' + code + ' ' + msg);
+  }
+  throw apiError_('AI_FAILED', 'Không model nào phân tích được. ' + notes.join(' / ') + ' Kiểm tra tên model trong Config → ai_models.');
+}
+
+/** Menu: đặt hoặc xoá API key (lưu trong Script Properties). */
+function setGeminiKey() {
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.prompt('Gemini API key', 'Dán API key lấy từ Google AI Studio. Gõ “xoa” để xoá key hiện tại.', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  var v = r.getResponseText().trim();
+  var props = PropertiesService.getScriptProperties();
+  if (v.toLowerCase() === 'xoa') { props.deleteProperty('GEMINI_API_KEY'); ui.alert('Đã xoá API key. Tính năng AI tạm tắt.'); return; }
+  if (v.length < 20) { ui.alert('Key có vẻ không đúng (quá ngắn). Chưa lưu.'); return; }
+  props.setProperty('GEMINI_API_KEY', v);
+  ui.alert('Đã lưu API key. Chạy “Kiểm tra kết nối AI” để thử.');
+}
+
+/** Menu: gửi một câu hỏi chữ ngắn để kiểm tra key và model. */
+function testGemini() {
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var r = callGemini_('', 'Trả lời đúng một từ: OK', null, null);
+    ui.alert('Kết nối được. Model đang dùng: ' + r.model + '\nTrả lời: ' + String(r.data).slice(0, 100));
+  } catch (e) {
+    ui.alert('Chưa kết nối được: ' + e.message);
+  }
 }

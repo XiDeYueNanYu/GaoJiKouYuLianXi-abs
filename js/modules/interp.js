@@ -31,6 +31,7 @@ Modules.dichnoi = {
     const src = root.querySelector('#src'), hidden = root.querySelector('.mat-hidden');
     const s = UI.speak({
       title: '<span class="task-no">Nói bản dịch tiếng Trung</span>', prepSec: U.num(t.prep_sec, 30), speakSec: U.num(t.speak_sec, 70), value: d,
+      ai: { scope: 'interp', context: () => ({ source_vi: t.text_vi, reference: t.reference_zh, terms: t.terms }) },
       onPhase: p => { const h = p === 'speak' && Store.prefs.hideText; src.hidden = h; hidden.hidden = !h; },
       onDone: r => { Object.assign(d, r); Store.saveDraft(key, d); this.after(root, t, terms, d); }
     });
@@ -55,7 +56,7 @@ Modules.dichnoi = {
     box.querySelector('#save').addEventListener('click', async () => {
       if (!tr) return UI.toast('Hãy ghi lại lời bạn đã nói trước khi lưu.', 'bad');
       const here = location.hash;
-        const ok = await UI.saveSpeaking({ scope: 'interp', type: 'interp', refId: t.id, title: String(t.text_vi).slice(0, 60) + '…', content: tr, notes: d.notes, speakSec: d.speakSec,
+        const ok = await UI.saveSpeaking({ scope: 'interp', type: 'interp', refId: t.id, title: String(t.text_vi).slice(0, 60) + '…', content: tr, notes: d.notes, speakSec: d.speakSec, ai: [d.ai],
         data: { termsHit: nHit, termsTotal: hit.length, missed: hit.filter(x => !x.ok).map(x => x.vi) }, intro: `Thuật ngữ khớp: ${nHit}/${hit.length}.` });
       if (ok) { Store.clearDraft('interp.' + t.id); Store.addMark('interp', t.id); if (location.hash === here) location.hash = '#/dichnoi'; }
     });

@@ -42,6 +42,7 @@ Modules.phanxa = {
       root.querySelector('#stop').addEventListener('click', () => this.summary(root, list.slice(0, results.length), results));
       const s = UI.speak({
         prepSec: prep, speakSec: U.num(q.speak_sec, defSpeak), notes: false,
+        ai: { scope: 'quick', context: () => ({ question: q.question_zh }) },
         onDone: r => {
           results[i] = r;
           const after = root.querySelector('#after');
@@ -72,7 +73,7 @@ Modules.phanxa = {
     root.querySelector('#save').addEventListener('click', async () => {
       const content = done.map(x => `问：${x.q.question_zh}\n答：${x.r.transcript || '（未记录）'}`).join('\n\n');
       const ok = await UI.saveSpeaking({ scope: 'quick', type: 'quick', refId: done.map(x => x.q.id).join(','), title: `Phản xạ nhanh: ${done.length} câu`, content, speakSec: totalSec,
-        data: { items: done.map(x => ({ id: x.q.id, sec: x.r.speakSec, rate: x.r.rate })) }, intro: `Chấm chung cho cả lượt ${done.length} câu.` });
+        ai: done.map(x => x.r.ai), data: { items: done.map(x => ({ id: x.q.id, sec: x.r.speakSec, rate: x.r.rate })) }, intro: `Chấm chung cho cả lượt ${done.length} câu.` });
       if (ok) this.render(root);
     });
   }

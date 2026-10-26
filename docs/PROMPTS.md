@@ -239,7 +239,7 @@ Dữ liệu:
 
 ## 10. Nhận xét bài nói đã lưu
 
-Mở bài trong trang **Lịch sử**, bấm **Sao chép lời nói**, rồi dùng:
+Nếu đã bật AI phân tích giọng nói, ứng dụng tự làm việc này khi bạn bấm **Phân tích bằng AI**. Prompt dưới đây dùng khi chưa bật AI, hoặc khi muốn hỏi một AI khác. Mở bài trong trang **Lịch sử**, bấm **Sao chép lời nói**, rồi dùng:
 
 ```text
 Bạn là giám khảo khẩu ngữ HSK 7–9, quen thang chấm IELTS Speaking, và là giáo viên tiếng Trung cho người Việt.
@@ -277,3 +277,23 @@ Hãy nhận xét bằng tiếng Việt:
 5. Lời kêu gọi: có cụ thể không? Đề xuất một câu hỏi bình luận dễ trả lời hơn.
 6. Viết lại toàn bộ kịch bản đã chỉnh, giữ đúng các nhãn khối.
 ```
+
+---
+
+## 12. Chỉnh prompt cho AI phân tích giọng nói (tab AiPrompts)
+
+Tab `AiPrompts` chứa prompt mà ứng dụng gửi cho Gemini khi bạn bấm **Phân tích bằng AI**. Muốn AI nhận xét khác đi (khắt khe hơn, chú trọng thanh điệu hơn, thêm gợi ý thành ngữ…), có thể nhờ một AI viết lại prompt:
+
+```text
+Dưới đây là prompt tôi đang dùng để Gemini chấm bài nói tiếng Trung từ file ghi âm (trình độ HSK 7–9, người học là người Việt). Các biến dạng {{…}} sẽ được ứng dụng thay bằng nội dung thật; phải giữ nguyên các biến này.
+Kết quả buộc phải là JSON với các trường: transcript, summary, scores, comments, pronunciation, errors, extra, improved (ứng dụng đã khai báo cấu trúc này, prompt không cần lặp lại).
+
+Tôi muốn chỉnh để: [ví dụ: nhận xét phát âm chi tiết hơn với từng thanh điệu; errors ưu tiên lỗi kiểu người Việt; improved dùng thêm 1–2 thành ngữ phù hợp].
+
+Prompt hiện tại:
+[dán nội dung ô prompt]
+
+Hãy viết lại prompt, giữ nguyên các biến {{…}} và văn phong ngắn gọn, đánh số quy tắc. Chỉ trả về prompt mới.
+```
+
+Dán prompt mới vào đúng ô, rồi bấm **Tải lại dữ liệu** trong ứng dụng (prompt được đọc ở phía máy chủ mỗi lần phân tích, nên thực ra có hiệu lực ngay).

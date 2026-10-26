@@ -20,8 +20,9 @@ Modules.lichsu = {
     const avg = arr => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length * 10) / 10 : null;
     const stats = crit.map(c => {
       const all = subs.filter(s => s.scores && s.scores[c.id] != null).map(s => Number(s.scores[c.id]));
-      return { c, n: all.length, all: avg(all), recent: avg(all.slice(0, 5)), first: avg(all.slice(-5)) };
-    }).filter(x => x.n);
+      const ai = subs.filter(s => s.aiScores && s.aiScores[c.id] != null).map(s => Number(s.aiScores[c.id])).filter(Boolean);
+      return { c, n: all.length, all: avg(all), recent: avg(all.slice(0, 5)), first: avg(all.slice(-5)), ai: avg(ai), nAi: ai.length };
+    }).filter(x => x.n || x.nAi);
     const rated = subs.filter(s => U.num(s.rate) > 0);
     const types = Object.keys(this.TYPE_VI);
     const cmp = h.attempts || [];
@@ -29,12 +30,13 @@ Modules.lichsu = {
 
     body.innerHTML = `
       <section class="section" style="padding-top:0"><h2>Điểm tự chấm theo tiêu chí</h2>
-        ${stats.length ? `<div class="table-wrap"><table class="stat-table"><thead><tr><th>Tiêu chí</th><th style="width:34%">Trung bình (thang 5)</th><th class="num">5 bài gần nhất</th><th class="num">5 bài đầu</th><th class="num">Số bài</th></tr></thead><tbody>
+        ${stats.length ? `<div class="table-wrap"><table class="stat-table"><thead><tr><th>Tiêu chí</th><th style="width:34%">Trung bình (thang 5)</th><th class="num">5 bài gần nhất</th><th class="num">5 bài đầu</th><th class="num">AI chấm (TB)</th><th class="num">Số bài</th></tr></thead><tbody>
           ${stats.map(x => `<tr><td><span class="zh">${U.esc(x.c.name_zh)}</span> <span class="muted small">${U.esc(x.c.name_vi)}</span></td>
-            <td><div class="bar" title="${x.all}"><i style="width:${x.all / 5 * 100}%"></i></div></td>
-            <td class="num">${x.recent}${x.recent > x.first && x.n > 5 ? ' ↑' : ''}</td><td class="num">${x.first}</td><td class="num">${x.n}</td></tr>`).join('')}
+            <td>${x.n ? `<div class="bar" title="${x.all}"><i style="width:${x.all / 5 * 100}%"></i></div>` : '<span class="muted small">Chưa tự chấm</span>'}</td>
+            <td class="num">${x.n ? x.recent + (x.recent > x.first && x.n > 5 ? ' ↑' : '') : ''}</td><td class="num">${x.n ? x.first : ''}</td>
+            <td class="num">${x.nAi ? x.ai + (x.n && Math.abs(x.all - x.ai) >= 1 ? (x.all > x.ai ? ' <span class="small muted">(bạn chấm cao hơn)</span>' : ' <span class="small muted">(bạn chấm thấp hơn)</span>') : '') : ''}</td><td class="num">${x.n}</td></tr>`).join('')}
         </tbody></table></div>
-        ${(() => { const w = stats.filter(x => x.c.scope === 'core').sort((a, b) => a.recent - b.recent)[0]; return w ? `<p class="small" style="margin-top:10px">Tiêu chí cần ưu tiên: <b class="zh">${U.esc(w.c.name_zh)}</b> (${U.esc(w.c.name_vi)}).</p>` : ''; })()}`
+        ${(() => { const w = stats.filter(x => x.c.scope === 'core' && x.n).sort((a, b) => a.recent - b.recent)[0]; return w ? `<p class="small" style="margin-top:10px">Tiêu chí cần ưu tiên: <b class="zh">${U.esc(w.c.name_zh)}</b> (${U.esc(w.c.name_vi)}).</p>` : ''; })()}`
         : '<div class="empty">Chưa có bài nào được tự chấm.</div>'}
       </section>
       <section class="section"><h2>Tốc độ nói</h2>
@@ -80,6 +82,8 @@ Modules.lichsu = {
         ${s.notes ? `<p style="margin-top:12px"><b>Ý chính đã chuẩn bị:</b></p><p class="zh pre">${U.esc(s.notes)}</p>` : ''}
         ${missed.length ? `<p style="margin-top:12px;font-weight:500">Checklist chưa đạt</p><ul class="tips">${missed.map(m => `<li>${U.esc(m)}</li>`).join('')}</ul>` : ''}
         ${s.note ? `<p style="margin-top:12px"><b>Ghi chú:</b> ${U.esc(s.note)}</p>` : ''}
+        ${(() => { let list = []; try { list = s.aiFeedback ? JSON.parse(s.aiFeedback) : []; } catch (e) { list = []; }
+          return Array.isArray(list) && list.length ? `<h3 style="margin-top:18px">Nhận xét của AI</h3>${list.map((a, i) => (list.length > 1 ? `<p class="small muted" style="margin-top:10px">Lượt ${i + 1}</p>` : '') + AI.panel(a)).join('')}` : ''; })()}
         <p class="small muted" style="margin-top:14px">Muốn nhận xét chi tiết: sao chép phần lời nói và dùng prompt “Nhận xét bài nói” trong docs/PROMPTS.md.</p>`,
       actions: [{ label: 'Sao chép lời nói', value: () => { navigator.clipboard && navigator.clipboard.writeText(U.stripMarks(s.content)).then(() => UI.toast('Đã sao chép.')).catch(() => {}); return false; } }, { label: 'Đóng', kind: 'primary', value: null }]
     });

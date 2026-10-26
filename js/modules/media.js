@@ -85,11 +85,20 @@ Modules.truyenthong = {
             ${U.lines(idea.hooks).length ? `<p class="sugg-title">Câu mở gợi ý</p>${UI.phraseButtons(U.lines(idea.hooks).map(h => ({ zh: h, vi: 'Chèn câu mở' })))}` : ''}
             ${U.lines(idea.points).length ? `<p class="sugg-title" style="margin-top:10px">Ý chính</p><ul class="tips small">${U.lines(idea.points).map(p => `<li class="zh">${U.esc(p)}</li>`).join('')}</ul>` : ''}
             ${idea.cta ? `<p class="sugg-title" style="margin-top:10px">Lời kêu gọi</p>${UI.phraseButtons([{ zh: idea.cta, vi: 'Chèn lời kêu gọi' }])}` : ''}</div>` : ''}
+          <div class="side-block" id="aiblk" hidden><h3>Lượt đọc gần nhất</h3></div>
           <div class="side-block"><p class="sugg-title" id="sg-title"></p><div id="sg"></div></div>
         </aside>
       </div>`;
 
     const form = root.querySelector('#blocks');
+    const aiBlk = root.querySelector('#aiblk');
+    const aiBox = AI.box({
+      scope: 'media', getSec: () => d.sec, value: d.ai || null,
+      context: () => ({ type: t.name_zh, script: tas.filter(ta => ta.value.trim()).map(ta => ta.value.trim()).join('\n'), target_sec: target }),
+      onResult: a => { d.ai = a; persist(); }
+    });
+    aiBlk.appendChild(aiBox.el);
+    aiBlk.hidden = !d.ai;
     const tas = [...form.querySelectorAll('textarea')];
     tas.forEach(ta => { ta.value = d.parts[ta.dataset.name] || ''; });
     let focusEl = tas[0], focusIdx = 0;
@@ -134,15 +143,16 @@ Modules.truyenthong = {
     root.querySelector('#tp').addEventListener('click', async () => {
       const text = tas.filter(ta => ta.value.trim()).map(ta => ta.value.trim()).join('\n\n');
       if (!text) return UI.toast('Kịch bản đang trống.', 'bad');
-      const r = await UI.teleprompter(text, { rate: Number(d.rate) });
+      const r = await UI.teleprompter(text, { rate: Number(d.rate), record: true });
       if (r.sec > 3) { d.sec = r.sec; d.runs = (d.runs || 0) + 1; persist(); draw(); }
+      if (r.rec) { aiBox.setRec(r.rec); aiBlk.hidden = false; }
     });
     root.querySelector('#save').addEventListener('click', async () => {
       const content = script(true);
       if (!U.count(content).han) return UI.toast('Kịch bản đang trống.', 'bad');
       const plain = script(false);
       const here = location.hash;
-        const ok = await UI.saveSpeaking({ scope: 'media', type: 'media', refId: idea ? idea.id : t.id, title: `${t.name_zh}: ${idea ? idea.title : 'tự chọn'}`, content, speakSec: d.sec,
+        const ok = await UI.saveSpeaking({ scope: 'media', type: 'media', refId: idea ? idea.id : t.id, title: `${t.name_zh}: ${idea ? idea.title : 'tự chọn'}`, content, speakSec: d.sec, ai: [d.ai],
         data: { type: t.id, idea: idea ? idea.id : '', estSec: U.duration(plain, Number(d.rate)), targetSec: target, runs: d.runs || 0 },
         intro: `Ước tính ${U.fmtTime(U.duration(plain, Number(d.rate)))} (mục tiêu ${U.fmtTime(target)}), đã luyện ${d.runs || 0} lần với máy nhắc chữ.` });
       if (ok) { Store.clearDraft(key); if (idea) Store.addMark('media', idea.id); if (location.hash === here) location.hash = '#/truyenthong/' + t.id; }

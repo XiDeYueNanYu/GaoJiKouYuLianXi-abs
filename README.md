@@ -15,6 +15,8 @@ Công cụ luyện nói tiếng Trung cho ba mục tiêu: thi khẩu ngữ HSK 3
 | **Video** | Xưởng kịch bản cho 12 dạng nội dung (trọng tâm: kiến thức ngôn ngữ, chuyện và so sánh văn hoá, giới thiệu khoá học/tài liệu). Soạn theo khối, ước lượng thời lượng, máy nhắc chữ toàn màn hình. |
 | **Lịch sử** | Điểm tự chấm theo từng tiêu chí (so 5 bài đầu với 5 bài gần nhất), tốc độ nói, các bài đã lưu. |
 
+**AI phân tích giọng nói (tuỳ chọn):** ghi âm ngay trên trang, bấm **Phân tích bằng AI** để Gemini chép lại lời nói, chấm điểm theo tiêu chí, chỉ lỗi phát âm và diễn đạt, và đưa ra phiên bản nâng cấp. API key nằm trong Apps Script, có giới hạn lượt cho từng người dùng. Không lưu file ghi âm.
+
 Mọi lượt nói đều có đồng hồ chuẩn bị và đồng hồ nói (kèm tiếng bíp), ô ghi ý chính, ô bản ghi lời nói (dùng đọc chính tả của bàn phím điện thoại), tốc độ nói, cảnh báo từ đệm lặp, và tự chấm theo 4 tiêu chí phỏng theo IELTS (cộng 3 tiêu chí riêng cho video).
 
 ## Dữ liệu mẫu đi kèm
@@ -27,7 +29,7 @@ Mọi lượt nói đều có đồng hồ chuẩn bị và đồng hồ nói (k
 index.html
 css/style.css
 js/config.js          ← dán URL Web App vào đây
-js/util.js, store.js, api.js, ui.js, app.js
+js/util.js, store.js, api.js, ai.js, ui.js, app.js
 js/modules/           ← mỗi phần luyện một file
 apps-script/Code.gs   ← mã backend, dán vào Apps Script của Sheet
 data/                 ← file Sheet mẫu
