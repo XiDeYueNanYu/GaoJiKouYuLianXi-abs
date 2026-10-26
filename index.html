@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Luyện khẩu ngữ 口语</title>
+  <meta name="description" content="Luyện nói tiếng Trung: thi HSK 7–9, khung IELTS, và biểu đạt cho video 抖音 / 小红书">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231F5F7A'/%3E%3Cpath d='M7 12h4M14 15l4-4M21 11l2 4 2-4M10 22l4 4' stroke='%23fff' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+</head>
+<body>
+  <section id="login-view" class="login" hidden>
+    <div class="login-inner">
+      <svg class="tones" viewBox="0 0 280 72" aria-hidden="true">
+        <path d="M14 22 H58" /><path d="M86 50 L130 18" /><path d="M156 26 L178 52 L202 22" /><path d="M228 18 L268 54" />
+      </svg>
+      <p class="login-zh zh">开口说</p>
+      <h1 class="login-heading">Luyện khẩu ngữ tiếng Trung</h1>
+      <p class="login-sub">Thi nói HSK 7–9, khung IELTS và biểu đạt cho video 抖音 / 小红书</p>
+      <form id="login-form" class="login-form" autocomplete="on">
+        <label>Tên đăng nhập<input name="username" autocomplete="username" required autocapitalize="none" spellcheck="false"></label>
+        <label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required></label>
+        <p class="form-error" id="login-error" role="alert" hidden></p>
+        <button class="btn btn-primary" type="submit">Đăng nhập</button>
+      </form>
+    </div>
+  </section>
+
+  <div id="app-view" class="shell" hidden>
+    <nav class="rail" aria-label="Các phần luyện">
+      <a class="rail-brand" href="#/thuvien"><svg viewBox="0 0 64 20" aria-hidden="true"><path d="M2 6h10M18 15l10-10M34 6l5 9 5-9M50 5l12 11"/></svg><span class="zh">口语</span></a>
+      <ul class="rail-list">
+        <li><a href="#/thuvien" data-route="thuvien"><span class="r-vi">Thư viện</span><span class="r-zh">表达框架</span></a></li>
+        <li><a href="#/sosanh" data-route="sosanh"><span class="r-vi">So sánh</span><span class="r-zh">高低对比</span></a></li>
+        <li><a href="#/phanxa" data-route="phanxa"><span class="r-vi">Phản xạ</span><span class="r-zh">快问快答</span></a></li>
+        <li><a href="#/tailieu" data-route="tailieu"><span class="r-vi">Tài liệu</span><span class="r-zh">复述与回答</span></a></li>
+        <li><a href="#/quandiem" data-route="quandiem"><span class="r-vi">Quan điểm</span><span class="r-zh">观点与追问</span></a></li>
+        <li><a href="#/dichnoi" data-route="dichnoi"><span class="r-vi">Dịch nói</span><span class="r-zh">越译中</span></a></li>
+        <li><a href="#/truyenthong" data-route="truyenthong"><span class="r-vi">Video</span><span class="r-zh">抖音·小红书</span></a></li>
+        <li><a href="#/lichsu" data-route="lichsu"><span class="r-vi">Lịch sử</span><span class="r-zh">记录</span></a></li>
+      </ul>
+      <div class="rail-foot">
+        <p class="rail-user" id="rail-user"></p>
+        <label class="switch"><input type="checkbox" id="pref-pinyin"><span>Hiện pinyin</span></label>
+        <label class="switch"><input type="checkbox" id="pref-beep"><span>Tiếng bíp khi hết giờ</span></label>
+        <button class="link-btn" id="btn-refresh" type="button">Tải lại dữ liệu</button>
+        <p class="rail-meta" id="content-meta"></p>
+        <button class="link-btn" id="btn-logout" type="button">Đăng xuất</button>
+      </div>
+    </nav>
+    <main id="view" class="view" tabindex="-1"></main>
+  </div>
+
+  <div id="toast-host" class="toast-host" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/pinyin-pro@3/dist/index.js" defer></script>
+  <script src="js/config.js" defer></script>
+  <script src="js/util.js" defer></script>
+  <script src="js/store.js" defer></script>
+  <script src="js/api.js" defer></script>
+  <script src="js/ui.js" defer></script>
+  <script src="js/modules/library.js" defer></script>
+  <script src="js/modules/compare.js" defer></script>
+  <script src="js/modules/quick.js" defer></script>
+  <script src="js/modules/material.js" defer></script>
+  <script src="js/modules/opinion.js" defer></script>
+  <script src="js/modules/interp.js" defer></script>
+  <script src="js/modules/media.js" defer></script>
+  <script src="js/modules/history.js" defer></script>
+  <script src="js/app.js" defer></script>
+</body>
+</html>
